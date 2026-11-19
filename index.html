@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Бар</title>
+<style>
+  body{margin:0;overflow:hidden;background:#000;font-family:sans-serif;touch-action:none;}
+  #hud{position:fixed;top:10px;left:10px;color:#fff;font-size:14px;text-shadow:1px 1px 2px #000;pointer-events:none;z-index:10}
+  #msg{position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);color:#ffdd00;font-size:22px;font-weight:bold;text-shadow:2px 2px 4px #000;pointer-events:none;z-index:10;text-align:center;opacity:0;transition:opacity .3s}
+  #controls{position:fixed;bottom:0;left:0;right:0;height:45%;pointer-events:none;z-index:10}
+  .btn{position:absolute;width:70px;height:70px;border-radius:50%;background:rgba(255,255,255,0.2);border:2px solid rgba(255,255,255,0.5);color:#fff;font-size:24px;display:flex;align-items:center;justify-content:center;pointer-events:auto;user-select:none}
+  #joy{left:20px;bottom:20px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,0.1);border:2px solid rgba(255,255,255,0.3)}
+  #joyKnob{position:absolute;width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,0.4);left:35px;top:35px}
+  #actBtn{right:20px;bottom:90px;background:rgba(0,150,255,0.4)}
+  #drinkBtn{right:110px;bottom:20px;background:rgba(200,150,0,0.5)}
+  #hitBtn{right:20px;bottom:20px;background:rgba(255,0,0,0.5)}
+</style>
+</head>
+<body>
+<div id="hud">❤️ HP: <span id="hp">100</span> | 🍺 Пиво: <span id="beer">0</span> | 👊 Побед: <span id="wins">0</span></div>
+<div id="msg"></div>
+<div id="controls">
+  <div id="joy"><div id="joyKnob"></div></div>
+  <div class="btn" id="drinkBtn">🍺</div>
+  <div class="btn" id="hitBtn">👊</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ==== Сцена ====
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a0f0a);
+scene.fog = new THREE.Fog(0x1a0f0a, 8, 25);
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 100);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+// ==== Свет ====
+scene.add(new THREE.AmbientLight(0x664422, 0.6));
+const light = new THREE.PointLight(0xffaa44, 1.2, 20);
+light.position.set(0, 4, 0);
+scene.add(light);
+const light2 = new THREE.PointLight(0xff6644, 0.8, 15);
+light2.position.set(-5, 3, -5);
+scene.add(light2);
+
+// ==== Пол ====
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(30, 30),
+  new THREE.MeshStandardMaterial({color:0x3a2515, roughness:0.9})
+);
+floor.rotation.x = -Math.PI/2;
+scene.add(floor);
+
+// ==== Стены ====
+const wallMat = new THREE.MeshStandardMaterial({color:0x4a2a15, roughness:0.9});
+function wall(x,z,w,d){
+  const w2 = new THREE.Mesh(new THREE.BoxGeometry(w, 4, d), wallMat);
+  w2.position.set(x, 2, z);
+  scene.add(w2);
+}
+wall(0, -15, 30, 0.5);
+wall(0, 15, 30, 0.5);
+wall(-15, 0, 0.5, 30);
+wall(15, 0, 0.5, 30);
+
+// ==== Барная стойка ====
+const bar = new THREE.Mesh(
+  new THREE.BoxGeometry(10, 1.1, 1.2),
+  new THREE.MeshStandardMaterial({color:0x5a3a1a, roughness:0.7})
+);
+bar.position.set(0, 0.55, -10);
+scene.add(bar);
+
+// Полки
+for(let i=0;i<3;i++){
+  const shelf = new THREE.Mesh(
+    new THREE.BoxGeometry(10, 0.1, 0.4),
+    new THREE.MeshStandardMaterial({color:0x3a2010})
+  );
+  shelf.position.set(0, 2 + i*0.6, -11);
+  scene.add(shelf);
+}
+
+// Бутылки
+const bottleColors = [0x88cc00, 0xcc6600, 0xcc0000, 0x00aacc, 0xcccc00];
+for(let i=0;i<15;i++){
+  const b = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.08, 0.4, 8),
+    new THREE.MeshStandardMaterial({color: bottleColors[i%5], roughness:0.3})
+  );
+  b.position.set(-4 + (i%5)*2, 2.25 + Math.floor(i/5)*0.6, -11);
+  scene.add(b);
+}
+
+// Бармен
+const barman = new THREE.Mesh(
+  new THREE.CapsuleGeometry(0.35, 1.0, 4, 8),
+  new THREE.MeshStandardMaterial({color:0x222244})
+);
+barman.position.set(0, 1.0, -12);
+scene.add(barman);
+const barmanHead = new THREE.Mesh(
+  new THREE.SphereGeometry(0.28, 12, 12),
+  new THREE.MeshStandardMaterial({color:0xffcc99})
+);
+barmanHead.position.set(0, 1.9, -12);
+scene.add(barmanHead);
+
+// ==== Столы ====
+const tables = [];
+for(let i=0;i<4;i++){
+  const t = new THREE.Group();
+  const top = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.8, 0.8, 0.1, 12),
+    new THREE.MeshStandardMaterial({color:0x6a4020})
+  );
+  top.position.y = 0.9;
+  t.add(top);
+  const leg = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.1, 0.9, 8),
+    new THREE.MeshStandardMaterial({color:0x3a2010})
+  );
+  leg.position.y = 0.45;
+  t.add(leg);
+  t.position.set(-5 + i*3.3, 0, 5);
+  scene.add(t);
+  tables.push(t);
+}
+
+// ==== Игрок ====
+const player = new THREE.Group();
+const body = new THREE.Mesh(
+  new THREE.CapsuleGeometry(0.35, 1.0, 4, 8),
+  new THREE.MeshStandardMaterial({color:0x3355aa})
+);
+body.position.y = 1.0;
+player.add(body);
+const head = new THREE.Mesh(
+  new THREE.SphereGeometry(0.28, 12, 12),
+  new THREE.MeshStandardMaterial({color:0xffcc99})
+);
+head.position.y = 1.9;
+player.add(head);
+player.position.set(0, 0, 2);
+scene.add(player);
+
+// ==== Враги ====
+const enemies = [];
+function spawnEnemy(x, z){
+  const g = new THREE.Group();
+  const b = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.35, 1.0, 4, 8),
+    new THREE.MeshStandardMaterial({color:0xaa2222})
+  );
+  b.position.y = 1.0;
+  g.add(b);
+  const h = new THREE.Mesh(
+    new THREE.SphereGeometry(0.28, 12, 12),
+    new THREE.MeshStandardMaterial({color:0xffcc99})
+  );
+  h.position.y = 1.9;
+  g.add(h);
+  g.position.set(x, 0, z);
+  g.userData = {hp: 60, cooldown: 0, alive: true};
+  scene.add(g);
+  enemies.push(g);
+}
+spawnEnemy(-3, 8);
+spawnEnemy(4, 9);
+
+// ==== Состояние игры ====
+const state = {
+  hp: 100,
+  beer: 0,
+  wins: 0,
+  drunk: 0,
+  drunkTimer: 0,
+  hitCooldown: 0,
+  facing: 0
+};
+
+// ==== Управление ====
+const joy = document.getElementById('joy');
+const knob = document.getElementById('joyKnob');
+let joyActive = false, joyStart = {x:0,y:0}, joyVec = {x:0,y:0};
+let actionPressed = false;
+let hitPressed = false;
+let drinkPressed = false;
+
+function showMsg(text, ms=1200){
+  const m = document.getElementById('msg');
+  m.textContent = text;
+  m.style.opacity = 1;
+  clearTimeout(m._t);
+  m._t = setTimeout(()=>m.style.opacity=0, ms);
+}
+
+function updateHud(){
+  document.getElementById('hp').textContent = Math.max(0, Math.round(state.hp));
+  document.getElementById('beer').textContent = state.beer;
+  document.getElementById('wins').textContent = state.wins;
+}
+
+function setupButton(el, onPress, onRelease){
+  el.addEventListener('touchstart', e=>{e.preventDefault(); onPress();}, {passive:false});
+  el.addEventListener('touchend', e=>{e.preventDefault(); if(onRelease) onRelease();}, {passive:false});
+  el.addEventListener('mousedown', e=>{e.preventDefault(); onPress();});
+  el.addEventListener('mouseup', e=>{e.preventDefault(); if(onRelease) onRelease();});
+}
+
+setupButton(document.getElementById('hitBtn'), ()=>{ hitPressed = true; });
+setupButton(document.getElementById('drinkBtn'), ()=>{ drinkPressed = true; });
+
+// Джойстик
+joy.addEventListener('touchstart', e=>{
+  e.preventDefault();
+  const t = e.touches[0];
+  const r = joy.getBoundingClientRect();
+  joyStart = {x: r.left + r.width/2, y: r.top + r.height/2};
+  joyActive = true;
+  handleJoy(t.clientX, t.clientY);
+}, {passive:false});
+joy.addEventListener('touchmove', e=>{
+  e.preventDefault();
+  if(!joyActive) return;
+  const t = e.touches[0];
+  handleJoy(t.clientX, t.clientY);
+}, {passive:false});
+joy.addEventListener('touchend', e=>{
+  e.preventDefault();
+  joyActive = false;
+  joyVec = {x:0,y:0};
+  knob.style.left = '35px';
+  knob.style.top = '35px';
+}, {passive:false});
+
+// Мышь для ПК
+joy.addEventListener('mousedown', e=>{
+  const r = joy.getBoundingClientRect();
+  joyStart = {x: r.left + r.width/2, y: r.top + r.height/2};
+  joyActive = true;
+  handleJoy(e.clientX, e.clientY);
+});
+window.addEventListener('mousemove', e=>{
+  if(joyActive) handleJoy(e.clientX, e.clientY);
+});
+window.addEventListener('mouseup', ()=>{ joyActive = false; joyVec = {x:0,y:0}; knob.style.left='35px'; knob.style.top='35px';});
+
+function handleJoy(cx, cy){
+  let dx = cx - joyStart.x;
+  let dy = cy - joyStart.y;
+  const max = 60;
+  const d = Math.hypot(dx, dy);
+  if(d > max){ dx = dx/d*max; dy = dy/d*max; }
+  knob.style.left = (35 + dx) + 'px';
+  knob.style.top = (35 + dy) + 'px';
+  joyVec.x = dx/max;
+  joyVec.y = dy/max;
+}
+
+// ==== Логика ====
+let last = performance.now();
+let shake = 0;
+
+function animate(){
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - last)/1000);
+  last = now;
+
+  // Движение
+  const speed = 3.5 * (1 - state.drunk*0.15);
+  let mx = joyVec.x * speed * dt;
+  let mz = joyVec.y * speed * dt;
+
+  // Покачивание при опьянении
+  if(state.drunk > 0){
+    mx += (Math.random()-0.5) * state.drunk * 0.3 * dt;
+    mz += (Math.random()-0.5) * state.drunk * 0.3 * dt;
+  }
+
+  const newX = player.position.x + mx;
+  const newZ = player.position.z + mz;
+  player.position.x = Math.max(-14, Math.min(14, newX));
+  player.position.z = Math.max(-14, Math.min(14, newZ));
+
+  // Поворот в сторону движения
+  if(Math.hypot(joyVec.x, joyVec.y) > 0.1){
+    const angle = Math.atan2(joyVec.x, joyVec.y);
+    player.rotation.y += (angle - player.rotation.y) * 0.2;
+    state.facing = player.rotation.y;
+  }
+
+  // Пиво
+  if(drinkPressed){
+    drinkPressed = false;
+    // Проверка: рядом ли бармен
+    const d = Math.hypot(player.position.x - 0, player.position.z - (-10));
+    if(d < 3){
+      if(state.beer < 5){
+        state.beer++;
+        state.drunk = Math.min(5, state.drunk + 1);
+        state.drunkTimer = 15;
+        showMsg('🍺 Выпил пиво! Опьянение: ' + state.drunk + '/5');
+        updateHud();
+      } else {
+        showMsg('Больше не влезает!');
+      }
+    } else {
+      showMsg('Подойди к бару');
+    }
+  }
+
+  // Опьянение тает
+  if(state.drunkTimer > 0){
+    state.drunkTimer -= dt;
+    if(state.drunkTimer <= 0){
+      state.drunk = Math.max(0, state.drunk - 1);
+      state.drunkTimer = state.drunk > 0 ? 15 : 0;
+    }
+  }
+
+  // Удар
+  if(state.hitCooldown > 0) state.hitCooldown -= dt;
+  if(hitPressed){
+    hitPressed = false;
+    if(state.hitCooldown <= 0){
+      state.hitCooldown = 0.6;
+      let hitAny = false;
+      enemies.forEach(en => {
+        if(!en.userData.alive) return;
+        const dx = en.position.x - player.position.x;
+        const dz = en.position.z - player.position.z;
+        const dist = Math.hypot(dx, dz);
+        if(dist < 2.0){
+          hitAny = true;
+          let dmg = 15 + state.drunk * 5;
+          en.userData.hp -= dmg;
+          shake = 0.3;
+          showMsg('💥 ' + dmg + ' урона!');
+          // отлет врага
+          const nx = dx/dist, nz = dz/dist;
+          en.position.x += nx * 0.5;
+          en.position.z += nz * 0.5;
+          if(en.userData.hp <= 0){
+            en.userData.alive = false;
+            scene.remove(en);
+            state.wins++;
+            showMsg('👊 Победа!', 1500);
+            updateHud();
+          }
+        }
+      });
+      if(!hitAny) showMsg('Мимо!', 600);
+    }
+  }
+
+  // Враги атакуют
+  enemies.forEach(en => {
+    if(!en.userData.alive) return;
+    const dx = player.position.x - en.position.x;
+    const dz = player.position.z - en.position.z;
+    const dist = Math.hypot(dx, dz);
+    if(dist > 0.1 && dist < 10){
+      const sp = 1.5 * dt;
+      en.position.x += (dx/dist) * sp;
+      en.position.z += (dz/dist) * sp;
+      en.rotation.y = Math.atan2(dx, dz);
+    }
+    if(en.userData.cooldown > 0) en.userData.cooldown -= dt;
+    if(dist < 1.5 && en.userData.cooldown <= 0){
+      en.userData.cooldown = 1.2;
+      const dmg = 8 + Math.random()*5;
+      state.hp -= dmg;
+      shake = 0.5;
+      showMsg('💢 Вам врезали! -' + Math.round(dmg), 800);
+      updateHud();
+    }
+  });
+
+  // Смерть
+  if(state.hp <= 0){
+    showMsg('☠️ Вы проиграли! Перезагрузка...', 3000);
+    state.hp = 100;
+    state.beer = 0;
+    state.drunk = 0;
+    state.drunkTimer = 0;
+    player.position.set(0, 0, 2);
+    setTimeout(()=>updateHud(), 100);
+  }
+
+  // Камера от 3-го лица
+  const camDist = 4.5;
+  const camHeight = 3.0;
+  // Камера сзади по направлению взгляда
+  const camX = player.position.x - Math.sin(state.facing) * camDist;
+  const camZ = player.position.z - Math.cos(state.facing) * camDist;
+  camera.position.x += (camX - camera.position.x) * 0.1;
+  camera.position.z += (camZ - camera.position.z) * 0.1;
+  camera.position.y += (camHeight + state.drunk*0.2 - camera.position.y) * 0.1;
+  camera.lookAt(player.position.x, 1.5, player.position.z);
+
+  // Тряска
+  if(shake > 0){
+    shake -= dt * 2;
+    camera.position.x += (Math.random()-0.5) * shake * 0.4;
+    camera.position.y += (Math.random()-0.5) * shake * 0.4;
+  }
+
+  // Эффект опьянения — наклон камеры
+  if(state.drunk > 0){
+    camera.rotation.z = Math.sin(now*0.002) * 0.05 * state.drunk;
+    renderer.domElement.style.filter = `hue-rotate(${Math.sin(now*0.001)*30*state.drunk}deg) saturate(${1 + state.drunk*0.2})`;
+  } else {
+    camera.rotation.z = 0;
+    renderer.domElement.style.filter = 'none';
+  }
+
+  // Вращение бутылок для красоты
+  scene.children.forEach(c=>{
+    if(c.geometry && c.geometry.type === 'CylinderGeometry' && c.position.y > 2){
+      c.rotation.y += dt * 0.5;
+    }
+  });
+
+  renderer.render(scene, camera);
+}
+
+// Ресайз
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+updateHud();
+animate();
+</script>
+</body>
+</html>
